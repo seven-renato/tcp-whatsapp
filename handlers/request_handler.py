@@ -8,6 +8,7 @@ def handle_request(req, conn, address):
     code = req[:2]
     handler = request_handlers.get(code)
     if handler:
-        handler(req[2:], conn, address)
+        res = handler(req[2:], conn, address)
+        conn.sendall(res.encode())
     else:
         conn.sendall("0000000000000".encode())
