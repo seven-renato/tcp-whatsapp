@@ -11,12 +11,14 @@ class Server:
         self.created_clients = 1000000000000
         self.connected_clients = {}
         self.unreceived_messages = {}
+        self.groups = {}
 
         self.codes = {
             '01': self.register_client,
             '03': self.connect_client,
             '05': self.send_message,
-            '08': self.confirm_read
+            '08': self.confirm_read,
+            '10': self.create_group,
         }
 
     def register_client(self, payload, conn):
@@ -37,7 +39,6 @@ class Server:
         print("LOGGED!", id)
         print(type(id))
 
-
     def send_message(self, payload, conn):
         src = payload[:13]
         dst = payload[13:26]
@@ -51,15 +52,46 @@ class Server:
 
             receiver_conn = self.connected_clients[dst]
             receiver_conn.sendall(message)
-            return
-        
-        # Se não, armazena a mensagem para entrega futura na conexão
-        print("Armazenando mensagem...")
-        if int(dst) <= self.created_clients and int(dst) >= 1000000000000: 
+        elif int(dst) <= self.created_clients and int(dst) >= 1000000000000: 
+            print("Armazenando mensagem...")
             self.unreceived_messages[dst].append(message)
         else:
             conn.sendall("0000000000000".encode())
     
+    def confirm_read(self, payload, conn):
+        src = payload[:13]
+        dst = payload[13:26]
+        timestamp = payload[26:36]
+        if src in self.connected_clients:
+            conn = self.connected_clients[src]
+            conn.sendall(f'09{src}{dst}{timestamp}'.encode())
+
+    def create_group(self, payload, conn):
+        creator = payload[:13]
+        timestamp = payload[13:23]
+        members_qty = len(payload[23:]) / 13
+        members = [creator]
+        members_str = creator
+        for i in range(members_qty):
+            start = 23 + i * 13
+            end = start + 13
+            members.append(payload[start:end])
+            members_str += payload[start:end]
+        
+        chat_id = str(self.created_clients)
+        self.created_clients += 1
+        self.groups[chat_id] = members
+        
+        created_group_notification = f'11{timestamp}{members_str}'
+        for member in members:
+            if member in self.connected_clients:
+                conn = self.connected_clients[member]
+                conn.sendall(created_group_notification.encode())
+            elif int(member) <= self.created_clients and int(member) >= 1000000000000:
+                self.unreceived_messages[member].append(created_group_notification)
+            else:
+                conn.sendall("0000000000000".encode())
+
     def receive_unreceived_messages(self, id, conn):
         print("Delevering unreceived message...")
         for message in self.unreceived_messages[id]:
@@ -74,16 +106,11 @@ class Server:
                 else:
                     self.unreceived_messages[src].append(src_message)
             
+            if message[:2] == '08':
+                pass
+            
             conn.sendall(message.encode())
         self.unreceived_messages[id] = []
-    
-    def confirm_read(self, payload, conn):
-        src = payload[:13]
-        dst = payload[13:26]
-        timestamp = payload[26:36]
-        if src in self.connected_clients:
-            conn = self.connected_clients[src]
-            conn.sendall(f'09{src}{dst}{timestamp}'.encode())
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
