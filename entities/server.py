@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 from config.settings import HOST, PORT
 
 class Server:
@@ -28,53 +29,61 @@ class Server:
         conn.sendall(res.encode()) # 02 + id
 
     def connect_client(self, payload, conn):
-        self.connected_clients[payload] = conn
+        id = payload
+        self.connected_clients[id] = conn
         print(f"Connected clients: {self.connected_clients}")
-        for message in self.unreceived_messages[payload]:
-            print("Delevering unreceived message...")
-            self.deliver_message(conn, message)
-        self.unreceived_messages[payload] = []
-        print("LOGGED!", payload)
-        print(type(payload))
+        
+        self.receive_unreceived_messages(id, conn)
+        print("LOGGED!", id)
+        print(type(id))
 
 
     def send_message(self, payload, conn):
-        dst = payload[13:26] # 05
         src = payload[:13]
-        print(f"{src} Sending message to {dst}" + " " + payload)
-        server_payload = payload
+        dst = payload[13:26]
+        message = '06' + payload
+        
+        print(f"{src} Sending message to {dst}: {payload}")
         if dst in self.connected_clients: # Se quem vai receber a mensagem está conectado, entrega a mensagem
             print("Enviando mensagem...")
             conn = self.connected_clients[dst]
-            self.deliver_message(conn, server_payload)
-        else: # Se não, armazena a mensagem para entrega futura na conexão
-            print("Armazenando mensagem...")
-            if int(dst) <= self.created_clients and int(dst) >= 1000000000000: 
-                self.unreceived_messages[dst].append(server_payload)
-            else:
-                conn.sendall("0000000000000".encode())
+            conn.sendall('07' + dst + time.time())
 
-    def deliver_message(self, receiver_conn, message): # Message = 100000000000001000000000000 11724109292 TESTANDOPROTOCOLOTCP
-        dst_message = '06' + message
-        receiver_conn.sendall(dst_message.encode()) # 06 + message - Para o destino
-        timestamp = message[26:36]
-        dst = message[13:26]
-        src_message = '07' + dst + timestamp
-        src = message[:13]
-        print("OLHA O SRC --->", src)
-        if src in self.connected_clients:
-            conn = self.connected_clients[src]
-            conn.sendall(src_message.encode()) # 07 + message - Quem vai receber
+            receiver_conn = self.connected_clients[dst]
+            receiver_conn.sendall(message)
+            return
+        
+        # Se não, armazena a mensagem para entrega futura na conexão
+        print("Armazenando mensagem...")
+        if int(dst) <= self.created_clients and int(dst) >= 1000000000000: 
+            self.unreceived_messages[dst].append(message)
         else:
-            self.unreceived_messages[src].append(message)
+            conn.sendall("0000000000000".encode())
+    
+    def receive_unreceived_messages(self, id, conn):
+        print("Delevering unreceived message...")
+        for message in self.unreceived_messages[id]:
+            if message[:2] == '06':
+                src = message[:13]
+                dst = message[13:26]
+                timestamp = message[26:36]
+                src_message = '07' + dst + timestamp
+                if src in self.connected_clients:
+                    src_conn = self.connected_clients[src]
+                    src_conn.sendall(src_message.encode())
+                else:
+                    self.unreceived_messages[src].append(src_message)
+            
+            conn.sendall(message.encode())
+        self.unreceived_messages[id] = []
     
     def confirm_read(self, payload, conn):
         src = payload[:13]
-        timestamp = payload[13:26]
+        dst = payload[13:26]
+        timestamp = payload[26:36]
         if src in self.connected_clients:
             conn = self.connected_clients[src]
-            dst = list(self.connected_clients.keys())[list(self.connected_clients.values()).index(conn)]
-            conn.sendall(f'09{dst}{timestamp}'.encode())
+            conn.sendall(f'09{src}{dst}{timestamp}'.encode())
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
