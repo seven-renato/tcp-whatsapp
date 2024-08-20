@@ -31,6 +31,7 @@ class Server:
         self.connected_clients[payload] = conn
         print(f"Connected clients: {self.connected_clients}")
         for message in self.unreceived_messages[payload]:
+            print("Delevering unreceived message...")
             self.deliver_message(conn, message)
         self.unreceived_messages[payload] = []
         print("LOGGED!", payload)
@@ -39,7 +40,8 @@ class Server:
 
     def send_message(self, payload, conn):
         dst = payload[13:26] # 05
-        print(f"Sending message to {dst}" + " " + payload)
+        src = payload[:13]
+        print(f"{src} Sending message to {dst}" + " " + payload)
         server_payload = payload
         if dst in self.connected_clients: # Se quem vai receber a mensagem está conectado, entrega a mensagem
             print("Enviando mensagem...")
@@ -55,10 +57,11 @@ class Server:
     def deliver_message(self, receiver_conn, message): # Message = 100000000000001000000000000 11724109292 TESTANDOPROTOCOLOTCP
         dst_message = '06' + message
         receiver_conn.sendall(dst_message.encode()) # 06 + message - Para o destino
-        timestamp = message[26:38]
+        timestamp = message[26:36]
         dst = message[13:26]
         src_message = '07' + dst + timestamp
-        src = message[:14]
+        src = message[:13]
+        print("OLHA O SRC --->", src)
         if src in self.connected_clients:
             conn = self.connected_clients[src]
             conn.sendall(src_message.encode()) # 07 + message - Quem vai receber
@@ -66,8 +69,8 @@ class Server:
             self.unreceived_messages[src].append(message)
     
     def confirm_read(self, payload, conn):
-        src = payload[:14]
-        timestamp = payload[14:25]
+        src = payload[:13]
+        timestamp = payload[13:26]
         if src in self.connected_clients:
             conn = self.connected_clients[src]
             dst = list(self.connected_clients.keys())[list(self.connected_clients.values()).index(conn)]
