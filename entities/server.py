@@ -96,9 +96,10 @@ class Server:
         print("Delevering unreceived message...")
         for message in self.unreceived_messages[id]:
             if message[:2] == '06':
-                src = message[:13]
-                dst = message[13:26]
-                timestamp = message[26:36]
+                no_code_message = message[2:]
+                src = no_code_message[:13]
+                dst = no_code_message[13:26]
+                timestamp = no_code_message[26:36]
                 src_message = '07' + dst + timestamp
                 if src in self.connected_clients:
                     src_conn = self.connected_clients[src]
